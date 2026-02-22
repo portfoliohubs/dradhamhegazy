@@ -348,8 +348,14 @@ defaultContentLanguage = "en"
       alt = "bridge for missed upper 2 pmolars"
       description = "bridge for missed upper 2 pmolars"
       alt_ar = "كوبرى لتعويض ضرسين فى الفك العلوى"
-      description_ar = "كوبرى لتعويض ضرسين فى الفك العلوى"      
-      
+      description_ar = "كوبرى لتعويض ضرسين فى الفك العلوى"
+
+    [[params.clinical_cases.cases]]
+      photo = "https://github.com/user-attachments/assets/a3035290-3610-4c1c-a421-b81b7256425a"
+      alt = "post and core for endo ttt lower 5"
+      description = "post and core for endo ttt lower 5"
+      alt_ar = "تركيب دعامة لضرس بالفك السفلى"
+      description_ar = "تركيب دعامة لضرس بالفك السفلى"      
       #حشو العصب
   [[params.clinical_cases]]
     enabled = true
@@ -362,6 +368,46 @@ defaultContentLanguage = "en"
       description = "Endo lower Premolar"
       alt_ar = "حشو عصب لضرس بالفك السفلى"
       description_ar = "حشو عصب لضرس بالفك السفلى"
+
+    [[params.clinical_cases.cases]]
+      photo = "https://github.com/user-attachments/assets/a5a69858-d30b-4e56-af84-9b8585e9d00d"
+      alt = "Endo for upper canine"
+      description = "Endo for upper canine"
+      alt_ar = "حشو عصب للناب بالفك العلوى"
+      description_ar = "حشو عصب للناب بالفك العلوى"
+      
+  # Pediatric Dentistry
+  [[params.clinical_cases]]
+    enabled = true
+    category = "Pediatric"
+    category_ar = "اطفال"
+    
+    [[params.clinical_cases.cases]]
+      photo = "https://github.com/user-attachments/assets/d9f1f465-c903-487a-97b5-08fc95e6474e"
+      alt = "extraction of D,E"
+      description = "extraction of D,E"
+      alt_ar = "خلع ضروس لبنيه لطفل"
+      description_ar = "خلع ضروس لبنيه لطفل"
+
+  # Composite Restoration After Endo
+  [[params.clinical_cases]]
+    enabled = true
+    category = "Composite restoration after endo treating"
+    category_ar = "حشو ابيض ليزر"
+    
+    [[params.clinical_cases.cases]]
+      photo = "https://github.com/user-attachments/assets/d732156d-4c92-49c3-97fa-8b3914acd2a5"
+      alt = "Composite restoration after endo treating"
+      description = "Composite restoration after endo treating"
+      alt_ar = "حشو عصب ثم حشو تجميلى ليزر للضرس"
+      description_ar = "حشو عصب ثم حشو تجميلى ليزر للضرس"
+
+    [[params.clinical_cases.cases]]
+      photo = "https://github.com/user-attachments/assets/a37a9b53-09a8-455b-b344-1fb46c63294a"
+      alt = "Composite restoration after endo treating"
+      description = "Composite restoration after endo treating"
+      alt_ar = "حشو عصب ثم حشو تجميلى ليزر للضرس"
+      description_ar = "حشو عصب ثم حشو تجميلى ليزر للضرس"
       
   # Contact Section
   [params.contact]
