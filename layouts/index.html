@@ -1448,6 +1448,568 @@
     </footer>
 
     <script>
+        const rawCvData = {
+            lang: {{ .Site.Language.Lang | default "en" | jsonify }},
+            baseURL: {{ .Site.BaseURL | jsonify }},
+            title: {{ .Site.Title | jsonify }},
+            hero: {{ .Site.Params.hero | jsonify }},
+            heroAr: {{ .Site.Params.ar.hero | jsonify }},
+            skills: {{ .Site.Params.skills | jsonify }},
+            skillsAr: {{ .Site.Params.ar.skills | jsonify }},
+            education: {{ .Site.Params.education | jsonify }},
+            educationAr: {{ .Site.Params.ar.education | jsonify }},
+            contact: {{ .Site.Params.contact | jsonify }},
+            contactArLocation: {{ .Site.Params.ar.contact.location | jsonify }},
+            clinicalCases: {{ .Site.Params.clinical_cases | jsonify }},
+            labels: {{ .Site.Params.ui.labels | jsonify }},
+            labelsAr: {{ .Site.Params.ar.ui.labels | jsonify }}
+        };
+
+        function safeParse(val) {
+            if (typeof val === 'string') {
+                try {
+                    return JSON.parse(val);
+                } catch (_) {
+                    return val;
+                }
+            }
+            return val;
+        }
+
+        const cvData = {
+            lang: safeParse(rawCvData.lang),
+            baseURL: safeParse(rawCvData.baseURL),
+            title: safeParse(rawCvData.title),
+            hero: safeParse(rawCvData.hero),
+            heroAr: safeParse(rawCvData.heroAr),
+            skills: safeParse(rawCvData.skills),
+            skillsAr: safeParse(rawCvData.skillsAr),
+            education: safeParse(rawCvData.education),
+            educationAr: safeParse(rawCvData.educationAr),
+            contact: safeParse(rawCvData.contact),
+            contactArLocation: safeParse(rawCvData.contactArLocation),
+            clinicalCases: safeParse(rawCvData.clinicalCases),
+            labels: safeParse(rawCvData.labels),
+            labelsAr: safeParse(rawCvData.labelsAr)
+        };
+
+        const CV_LANG = 'en';
+
+        function pickLangValue(enValue, arValue) {
+            return enValue;
+        }
+
+        function buildProxyUrl(url) {
+            try {
+                const u = new URL(url);
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return url;
+            } catch (_) {
+                return url;
+            }
+            return `https://images.weserv.nl/?url=${encodeURIComponent(url)}`;
+        }
+
+        async function fetchAsDataUrl(url) {
+            const res = await fetch(url, { mode: 'cors' });
+            if (!res.ok) throw new Error(`Failed to fetch: ${url}`);
+            const blob = await res.blob();
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function urlToDataUrl(url) {
+            try {
+                return await fetchAsDataUrl(url);
+            } catch (e) {
+                const proxyUrl = buildProxyUrl(url);
+                if (proxyUrl === url) throw e;
+                return await fetchAsDataUrl(proxyUrl);
+            }
+        }
+
+        function buildCasesFlatList() {
+            const flat = [];
+            const casesRaw = cvData.clinicalCases;
+            const cases = Array.isArray(casesRaw) ? casesRaw : [];
+            
+            console.log('Processing clinical cases...');
+            
+            cases.forEach(cat => {
+                if (cat && cat.enabled === false) return;
+                const categoryTitle = pickLangValue(cat.category || '', cat.category_ar || '');
+                const catCases = Array.isArray(cat.cases) ? cat.cases : [];
+                
+                console.log(`Category: ${categoryTitle}, Cases count: ${catCases.length}`);
+                
+                catCases.forEach(c => {
+                    const title = pickLangValue(c.alt || '', c.alt_ar || '');
+                    const description = pickLangValue(c.description || '', c.description_ar || '');
+                    
+                    console.log(`Processing case: "${title}"`);
+                    
+                    flat.push({
+                        categoryTitle,
+                        photo: c.photo || '',
+                        title: title,
+                        description: description
+                    });
+                });
+            });
+            
+            console.log(`Before filtering: ${flat.length} cases:`, flat.map(f => f.title));
+            
+            // Final filtering to remove duplicates - use normalized comparison
+            const seenTitles = new Set();
+            const finalFlat = [];
+            
+            flat.forEach(item => {
+                const normalizedTitle = (item.title || '').trim().toLowerCase();
+                console.log(`Checking normalized title: "${normalizedTitle}"`);
+                
+                if (!seenTitles.has(normalizedTitle)) {
+                    console.log(`Adding unique case: "${item.title}"`);
+                    seenTitles.add(normalizedTitle);
+                    finalFlat.push(item);
+                } else {
+                    console.log(`Removing duplicate case: "${item.title}"`);
+                }
+            });
+            
+            console.log(`After filtering: ${finalFlat.length} cases:`, finalFlat.map(f => f.title));
+            return finalFlat;
+        }
+
+        async function generateCvPdf() {
+            console.log('cvData:', cvData);
+            const hero = (cvData.hero || {});
+            const skills = (cvData.skills || {});
+            const education = (cvData.education || {});
+            const labels = (cvData.labels || {});
+
+            // Configure pdfMake with Unicode font support for Arabic
+            if (typeof pdfMake !== 'undefined') {
+                // Use default pdfMake fonts which have better Unicode support
+                // Don't override fonts to avoid configuration issues
+            }
+
+            const name = hero.name || cvData.title || 'CV';
+            const role = hero.tagline || '';
+            const graduation = hero.graduation || '';
+            const profileImageUrl = hero.profile_image || '';
+
+            let profileImageDataUrl = null;
+            if (profileImageUrl) {
+                try {
+                    profileImageDataUrl = await urlToDataUrl(profileImageUrl);
+                } catch (e) {
+                    profileImageDataUrl = null;
+                }
+            }
+
+            const cases = buildCasesFlatList();
+            const maxCaseImages = 20;
+            const casePages = [];
+            for (let i = 0; i < cases.length; i++) {
+                const item = cases[i];
+                let caseImage = null;
+                if (item.photo && i < maxCaseImages) {
+                    try {
+                        caseImage = await urlToDataUrl(item.photo);
+                    } catch (e) {
+                        caseImage = null;
+                    }
+                }
+
+                const textParts = [];
+                if (item.categoryTitle) textParts.push({ text: item.categoryTitle, bold: true, fontSize: 16, alignment: 'center' });
+                
+                // Add title if it exists
+                if (item.title) textParts.push({ text: item.title, bold: true, fontSize: 14, alignment: 'center', margin: [0, 8, 0, 0] });
+                
+                // Add description only if it's different from title (prevent duplicates)
+                if (item.description) {
+                    const normalizedTitle = (item.title || '').trim().toLowerCase();
+                    const normalizedDescription = (item.description || '').trim().toLowerCase();
+                    
+                    if (normalizedDescription !== normalizedTitle) {
+                        textParts.push({ text: item.description, fontSize: 12, alignment: 'center', margin: [0, 12, 0, 0] });
+                    } else {
+                        console.log(`Skipping duplicate description: "${item.description}" (same as title)`);
+                    }
+                }
+                
+                if (!caseImage && item.photo) textParts.push({ text: item.photo, color: '#2563eb', fontSize: 9, alignment: 'center' });
+
+                const pageContent = [];
+                
+                if (caseImage) {
+                    // Add image with smart sizing to prevent full-page issues
+                    pageContent.push({
+                        image: caseImage,
+                        width: 300,
+                        alignment: 'center',
+                        margin: [0, 30, 0, 20],
+                        // Prevent image from taking too much vertical space
+                        fit: [300, 250] // Max width 300px, max height 250px
+                    });
+                }
+                
+                // Add text description
+                if (textParts.length > 0) {
+                    pageContent.push({
+                        stack: textParts,
+                        alignment: 'center'
+                    });
+                }
+
+                if (pageContent.length > 0) {
+                    casePages.push({
+                        pageBreak: i > 0 ? 'before' : undefined,
+                        stack: pageContent,
+                        margin: [40, 60, 40, 60]
+                    });
+                }
+            }
+
+            const contactLines = [];
+            if (cvData.contact?.phone) {
+                contactLines.push({ text: `${labels.phone || 'Phone'}: ${cvData.contact.phone}`, style: 'small', margin: [0, 2, 0, 0] });
+            }
+            if (cvData.contact?.whatsapp) {
+                contactLines.push({ text: `${labels.whatsapp || 'WhatsApp'}: ${cvData.contact.whatsapp}`, style: 'small', margin: [0, 2, 0, 0] });
+            }
+            if (cvData.contact?.email) {
+                contactLines.push({ text: `${labels.email || 'Email'}: ${cvData.contact.email}`, style: 'small', margin: [0, 2, 0, 0] });
+            }
+            
+            const clinicalSkills = (skills.clinical || []).map(s => ({ text: s }));
+            const digitalSkills = (skills.digital || []).map(s => ({ text: s }));
+            const softSkills = (skills.soft || []).map(s => ({ text: s }));
+
+            const timeline = (education.timeline || []).map(t => {
+                const year = t.year ? `${t.year} — ` : '';
+                const event = t.event || '';
+                return { text: year + event };
+            });
+
+            const docDefinition = {
+                pageSize: 'A4',
+                pageMargins: [50, 60, 50, 60],
+                defaultStyle: {
+                    font: 'Roboto',
+                    fontSize: 10,
+                    lineHeight: 1.4
+                },
+                header: function(currentPage, pageCount) {
+                    return {
+                        margin: [50, 20, 50, 0],
+                        columns: [
+                            {
+                                text: currentPage > 1 ? name : '',
+                                style: 'headerText',
+                                width: '*'
+                            },
+                            {
+                                text: currentPage > 1 ? `Page ${currentPage} of ${pageCount}` : '',
+                                style: 'pageNumber',
+                                alignment: 'right'
+                            }
+                        ]
+                    };
+                },
+                footer: function(currentPage, pageCount) {
+                    if (currentPage === 1) return null;
+                    return {
+                        margin: [50, 0, 50, 20],
+                        text: `© ${new Date().getFullYear()} ${name}`,
+                        style: 'footerText',
+                        alignment: 'center'
+                    };
+                },
+                content: [
+                    // Header Section with Professional Design
+                    {
+                        stack: [
+                            {
+                                columns: [
+                                    profileImageDataUrl
+                                        ? { 
+                                            image: profileImageDataUrl, 
+                                            width: 80, 
+                                            height: 80,
+                                            alignment: 'center',
+                                            margin: [0, 0, 30, 0]
+                                        }
+                                        : { text: '', width: 0 },
+                                    {
+                                        stack: [
+                                            { text: name.toUpperCase(), style: 'headerName' },
+                                            { text: role, style: 'headerRole', margin: [0, 8, 0, 4] },
+                                            graduation ? { text: graduation, style: 'headerGraduation' } : null,
+                                            {
+                                                canvas: [
+                                                    { type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.5, lineColor: '#2563eb' }
+                                                ],
+                                                margin: [0, 12, 0, 12]
+                                            },
+                                            ...contactLines
+                                        ].filter(Boolean),
+                                        width: '*'
+                                    }
+                                ],
+                                columnGap: 0
+                            }
+                        ],
+                        margin: [0, 0, 0, 30]
+                    },
+                    
+                    // Professional divider
+                    {
+                        canvas: [
+                            { type: 'rect', x: 0, y: 0, w: 515, h: 2, color: '#2563eb' }
+                        ],
+                        margin: [0, 0, 0, 25]
+                    },
+                    
+                    // Two-column layout for main content
+                    {
+                        columns: [
+                            {
+                                width: '48%',
+                                stack: [
+                                    // Skills Section with Enhanced Design
+                                    {
+                                        stack: [
+                                            { text: 'PROFESSIONAL SKILLS', style: 'sectionHeader' },
+                                            {
+                                                canvas: [
+                                                    { type: 'line', x1: 0, y1: 0, x2: 80, y2: 0, lineWidth: 1, lineColor: '#2563eb' }
+                                                ],
+                                                margin: [0, 0, 0, 15]
+                                            },
+                                            
+                                            // Clinical Skills
+                                            clinicalSkills.length > 0 ? {
+                                                stack: [
+                                                    { text: 'Clinical Skills', style: 'subsectionHeader' },
+                                                    {
+                                                        ul: clinicalSkills.map(x => ({ text: x.text, style: 'skillItem' })),
+                                                        margin: [8, 8, 0, 20]
+                                                    }
+                                                ]
+                                            } : null,
+                                            
+                                            // Digital Skills  
+                                            digitalSkills.length > 0 ? {
+                                                stack: [
+                                                    { text: 'Digital Skills', style: 'subsectionHeader' },
+                                                    {
+                                                        ul: digitalSkills.map(x => ({ text: x.text, style: 'skillItem' })),
+                                                        margin: [8, 8, 0, 20]
+                                                    }
+                                                ]
+                                            } : null,
+                                            
+                                            // Soft Skills
+                                            softSkills.length > 0 ? {
+                                                stack: [
+                                                    { text: 'Soft Skills', style: 'subsectionHeader' },
+                                                    {
+                                                        ul: softSkills.map(x => ({ text: x.text, style: 'skillItem' })),
+                                                        margin: [8, 8, 0, 0]
+                                                    }
+                                                ]
+                                            } : null
+                                        ].filter(Boolean)
+                                    }
+                                ]
+                            },
+                            {
+                                width: '48%',
+                                stack: [
+                                    // Education Section
+                                    {
+                                        stack: [
+                                            { text: 'EDUCATION', style: 'sectionHeader' },
+                                            {
+                                                canvas: [
+                                                    { type: 'line', x1: 0, y1: 0, x2: 80, y2: 0, lineWidth: 1, lineColor: '#2563eb' }
+                                                ],
+                                                margin: [0, 0, 0, 15]
+                                            },
+                                            
+                                            education.university ? {
+                                                stack: [
+                                                    { text: education.university, style: 'universityName' },
+                                                    education.graduation_year ? { 
+                                                        text: `Graduated: ${education.graduation_year}`, 
+                                                        style: 'graduationYear',
+                                                        margin: [0, 4, 0, 15]
+                                                    } : null
+                                                ].filter(Boolean)
+                                            } : null,
+                                            
+                                            // Timeline
+                                            timeline.length > 0 ? {
+                                                stack: [
+                                                    { text: 'Professional Timeline', style: 'subsectionHeader', margin: [0, 15, 0, 10] },
+                                                    ...timeline.map((item, index) => ({
+                                                        stack: [
+                                                            {
+                                                                canvas: [
+                                                                    { type: 'line', x1: 0, y1: 0, x2: 15, y2: 0, lineWidth: 2, lineColor: '#2563eb' }
+                                                                ],
+                                                                margin: [0, 8, 0, 4]
+                                                            },
+                                                            { text: item.text, style: 'timelineItem', margin: [20, 0, 0, 8] }
+                                                        ]
+                                                    }))
+                                                ]
+                                            } : null
+                                        ].filter(Boolean)
+                                    }
+                                ]
+                            }
+                        ],
+                        columnGap: 30
+                    },
+                    
+                    // Clinical Cases Section
+                    casePages.length > 0 ? {
+                        stack: [
+                            { text: 'CLINICAL CASES PORTFOLIO', style: 'sectionHeader', pageBreak: 'before', margin: [0, 0, 0, 20] },
+                            {
+                                canvas: [
+                                    { type: 'line', x1: 0, y1: 0, x2: 120, y2: 0, lineWidth: 1, lineColor: '#2563eb' }
+                                ],
+                                margin: [0, 0, 0, 25]
+                            },
+                            ...casePages
+                        ]
+                    } : null,
+                    
+                    // Portfolio website section
+                    ...(casePages.length > 0 ? [{
+                        pageBreak: 'before',
+                        stack: [
+                            { text: 'COMPLETE PORTFOLIO', style: 'sectionHeader', alignment: 'center', margin: [0, 0, 0, 30] },
+                            {
+                                canvas: [
+                                    { type: 'line', x1: 180, y1: 0, x2: 335, y2: 0, lineWidth: 1, lineColor: '#2563eb' }
+                                ],
+                                margin: [0, 0, 0, 30]
+                            },
+                            { text: 'For complete portfolio and additional cases', style: 'portfolioText', alignment: 'center', margin: [0, 0, 0, 15] },
+                            { text: 'please visit my professional website:', style: 'portfolioText', alignment: 'center', margin: [0, 0, 0, 10] },
+                            { 
+                                text: cvData.baseURL || '', 
+                                style: 'portfolioLink', 
+                                alignment: 'center',
+                                color: '#2563eb',
+                                decoration: 'underline',
+                                fontSize: 12
+                            }
+                        ],
+                        margin: [0, 100, 0, 0]
+                    }] : [])
+                ].filter(Boolean),
+                styles: {
+                    // Professional Typography Styles
+                    headerName: { 
+                        fontSize: 26, 
+                        bold: true, 
+                        color: '#1a202c',
+                        letterSpacing: 1.2,
+                        lineHeight: 1.2
+                    },
+                    headerRole: { 
+                        fontSize: 14, 
+                        color: '#2563eb', 
+                        bold: true,
+                        letterSpacing: 0.5
+                    },
+                    headerGraduation: { 
+                        fontSize: 11, 
+                        color: '#64748b',
+                        fontStyle: 'italic'
+                    },
+                    sectionHeader: { 
+                        fontSize: 14, 
+                        bold: true, 
+                        color: '#1a202c',
+                        letterSpacing: 1.5,
+                        marginBottom: 5
+                    },
+                    subsectionHeader: { 
+                        fontSize: 12, 
+                        bold: true, 
+                        color: '#2563eb',
+                        marginBottom: 3
+                    },
+                    universityName: { 
+                        fontSize: 12, 
+                        bold: true, 
+                        color: '#1a202c',
+                        marginBottom: 2
+                    },
+                    graduationYear: { 
+                        fontSize: 10, 
+                        color: '#64748b'
+                    },
+                    skillItem: { 
+                        fontSize: 10, 
+                        color: '#374151',
+                        marginBottom: 2
+                    },
+                    timelineItem: { 
+                        fontSize: 10, 
+                        color: '#374151',
+                        lineHeight: 1.3
+                    },
+                    portfolioText: { 
+                        fontSize: 11, 
+                        color: '#4b5563'
+                    },
+                    portfolioLink: { 
+                        fontSize: 12, 
+                        bold: true
+                    },
+                    small: { fontSize: 9 },
+                    smallMuted: { fontSize: 9, color: '#6b7280' },
+                    headerText: { 
+                        fontSize: 9, 
+                        color: '#6b7280',
+                        fontStyle: 'italic'
+                    },
+                    pageNumber: { 
+                        fontSize: 8, 
+                        color: '#9ca3af'
+                    },
+                    footerText: { 
+                        fontSize: 8, 
+                        color: '#9ca3af'
+                    }
+                }
+            };
+
+            const fileNameSafe = (name || 'cv').toString().replace(/[^a-z0-9\-_ ]/gi, '').trim().replace(/\s+/g, '_');
+            
+            try {
+                console.log('Creating PDF with docDefinition:', docDefinition);
+                const pdfDoc = pdfMake.createPdf(docDefinition);
+                console.log('PDF document created, downloading...');
+                pdfDoc.download(`${fileNameSafe || 'cv'}_${CV_LANG}.pdf`);
+                console.log('PDF download initiated');
+            } catch (error) {
+                console.error('Error creating PDF:', error);
+                throw error;
+            }
+        }
+
         // Language and Theme Management
         let currentLang = 'en';
         let currentTheme = localStorage.getItem('theme') || 'light';
@@ -1458,6 +2020,24 @@
             initLanguage();
             initNavigation();
             initFooter();
+            // Download CV button
+            document.getElementById('downloadCvBtn').addEventListener('click', async function() {
+                const btn = this;
+                const oldHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                try {
+                    console.log('Starting PDF generation...');
+                    await generateCvPdf();
+                    console.log('PDF generated successfully');
+                } catch (error) {
+                    console.error('PDF generation failed:', error);
+                    alert('Failed to generate PDF. Please check console for details.');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = oldHtml;
+                }
+            });
         });
 
         // Theme Toggle
@@ -1548,9 +2128,13 @@
         }
     </script>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js"></script>
+
     <!-- Floating Button -->
-    <a href="#cases" class="floating-btn" aria-label="View Clinical Cases">
-        <i class="fas fa-tooth"></i>
-    </a>
-</body>
+    <button type="button" class="floating-btn" id="downloadCvBtn" aria-label="Download CV PDF">
+        <i class="fas fa-file-arrow-down"></i>
+    </button>
+
+    </body>
 </html>
