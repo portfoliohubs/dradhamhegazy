@@ -30,7 +30,10 @@
     <meta property="og:description" content="{{ $desc }}">
     <meta property="og:url" content="{{ .Permalink }}">
     <meta property="og:site_name" content="{{ $siteName }}">
-    <meta property="og:image" content="{{ ($seo.og_image | default "") | absURL }}">
+    {{ $ogImage := $seo.og_image | default "" }}
+    {{ $ogImageContent := "" }}
+    {{ if hasPrefix $ogImage "http" }}{{ $ogImageContent = $ogImage | absURL }}{{ else if hasPrefix $ogImage "data:" }}{{ $ogImageContent = $ogImage }}{{ end }}
+    <meta property="og:image" content="{{ $ogImageContent }}">
 
     <meta name="twitter:card" content="summary_large_image">
     {{ if $seo.twitter_handle }}
@@ -38,16 +41,18 @@
     {{ end }}
     <meta name="twitter:title" content="{{ if $doctorNameAr }}{{ $doctorNameEn }} | {{ $doctorNameAr }} - {{ $siteName }}{{ else }}{{ $doctorNameEn }} - {{ $siteName }}{{ end }}">
     <meta name="twitter:description" content="{{ $desc }}">
-    <meta name="twitter:image" content="{{ ($seo.og_image | default "") | absURL }}">
+    <meta name="twitter:image" content="{{ $ogImageContent }}">
 
     {{ $favicon := $seo.favicon_image | default "" }}
     {{ if eq $favicon "" }}
       {{ $favicon = .Site.Params.hero.profile_image | default "" }}
     {{ end }}
     {{ if ne $favicon "" }}
-    <link rel="icon" href="{{ $favicon }}" sizes="any">
-    <link rel="shortcut icon" href="{{ $favicon }}">
-    <link rel="apple-touch-icon" href="{{ $favicon }}">
+    {{ $faviconSrc := $favicon }}
+    {{ if and (not (hasPrefix $faviconSrc "data:")) (not (hasPrefix $faviconSrc "http")) }}{{ $faviconSrc = printf "data:image/jpeg;base64,%s" $faviconSrc }}{{ end }}
+    <link rel="icon" href="{{ $faviconSrc | safeURL }}" sizes="any">
+    <link rel="shortcut icon" href="{{ $faviconSrc | safeURL }}">
+    <link rel="apple-touch-icon" href="{{ $faviconSrc | safeURL }}">
     {{ end }}
 
     {{ with .Site.Params.integrations.google_search_console_verification }}
@@ -68,7 +73,7 @@
     {{ end }}
     {{ end }}
 
-    {{ $schema := dict "@context" "https://schema.org" "@type" (slice "Dentist" "LocalBusiness") "name" $doctorNameEn "url" .Permalink "image" (($seo.og_image | default "") | absURL) "telephone" (.Site.Params.contact.phone | default "") "email" (.Site.Params.contact.email | default "") "sameAs" (slice (.Site.Params.contact.instagram | default "") (.Site.Params.contact.facebook | default "") (.Site.Params.contact.linkedin | default "")) }}
+    {{ $schema := dict "@context" "https://schema.org" "@type" (slice "Dentist" "LocalBusiness") "name" $doctorNameEn "url" .Permalink "image" $ogImageContent "telephone" (.Site.Params.contact.phone | default "") "email" (.Site.Params.contact.email | default "") "sameAs" (slice (.Site.Params.contact.instagram | default "") (.Site.Params.contact.facebook | default "") (.Site.Params.contact.linkedin | default "")) }}
     <script type="application/ld+json">{{ $schema | jsonify }}</script>
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1121,8 +1126,10 @@
         <section id="home" class="section hero-section">
             <div class="hero-content">
                 <div class="profile-image-container">
+                    {{ $heroImgSrc := .Site.Params.hero.profile_image | default "" }}
+                    {{ if and (ne $heroImgSrc "") (not (hasPrefix $heroImgSrc "data:")) (not (hasPrefix $heroImgSrc "http")) }}{{ $heroImgSrc = printf "data:image/jpeg;base64,%s" $heroImgSrc }}{{ end }}
                     <img 
-                        src="{{ .Site.Params.hero.profile_image }}" 
+                        src="{{ $heroImgSrc | safeURL }}" 
                         alt="{{ .Site.Params.hero.profile_image_alt }}"
                         data-alt-en="{{ .Site.Params.hero.profile_image_alt }}"
                         data-alt-ar="{{ .Site.Params.ar.hero.profile_image_alt }}"
@@ -1301,7 +1308,9 @@
                                 {{ range .cases }}
                                     <div class="case-card">
                                         <div class="case-image-wrapper single">
-                                            <img src="{{ .photo }}" alt="{{ .alt | default .description }}" data-alt-en="{{ .alt | default .description }}" data-alt-ar="{{ .alt_ar | default (.alt | default .description) }}" class="case-image" loading="lazy">
+                                            {{ $caseSrc := .photo | default "" }}
+                                            {{ if and (ne $caseSrc "") (not (hasPrefix $caseSrc "data:")) (not (hasPrefix $caseSrc "http")) }}{{ $caseSrc = printf "data:image/jpeg;base64,%s" $caseSrc }}{{ end }}
+                                            <img src="{{ $caseSrc | safeURL }}" alt="{{ .alt | default .description }}" data-alt-en="{{ .alt | default .description }}" data-alt-ar="{{ .alt_ar | default (.alt | default .description) }}" class="case-image" loading="lazy">
                                         </div>
                                         <div class="case-description">
                                             <p data-en="{{ .description }}" data-ar="{{ .description_ar | default .description }}">{{ .description }}</p>
@@ -1521,6 +1530,46 @@
             }
         }
 
+        async function convertToJpegViaCanvas(dataUrl) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    resolve(canvas.toDataURL('image/jpeg', 0.92));
+                };
+                img.onerror = reject;
+                img.src = dataUrl;
+            });
+        }
+
+        async function resolveImageForPdf(val) {
+            if (!val) return null;
+            if (val.startsWith('data:')) {
+                // pdfMake supports jpeg and png — convert anything else (e.g. webp) via canvas
+                const isPdfSafe = val.startsWith('data:image/jpeg') || val.startsWith('data:image/png');
+                if (isPdfSafe) return val;
+                try {
+                    return await convertToJpegViaCanvas(val);
+                } catch (e) {
+                    return null;
+                }
+            }
+            if (val.startsWith('http://') || val.startsWith('https://')) {
+                try {
+                    const fetched = await urlToDataUrl(val);
+                    return await resolveImageForPdf(fetched);
+                } catch (e) {
+                    return null;
+                }
+            }
+            // Raw base64 — assume jpeg
+            return 'data:image/jpeg;base64,' + val;
+        }
+
         function buildCasesFlatList() {
             const flat = [];
             const casesRaw = cvData.clinicalCases;
@@ -1573,7 +1622,7 @@
             let profileImageDataUrl = null;
             if (profileImageUrl) {
                 try {
-                    profileImageDataUrl = await urlToDataUrl(profileImageUrl);
+                    profileImageDataUrl = await resolveImageForPdf(profileImageUrl);
                 } catch (e) {
                     profileImageDataUrl = null;
                 }
@@ -1588,7 +1637,7 @@
                 let caseImage = null;
                 if (item.photo && i < maxCaseImages) {
                     try {
-                        caseImage = await urlToDataUrl(item.photo);
+                        caseImage = await resolveImageForPdf(item.photo);
                     } catch (e) {
                         caseImage = null;
                     }
